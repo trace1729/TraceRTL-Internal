@@ -1,0 +1,37 @@
+# Native / generated build outputs
+build/
+
+# Scala / sbt
+target/
+project/target/
+project/project/
+project/metals.sbt
+lib_managed/
+src_managed/
+
+# Mill
+out/
+
+# Scala tooling
+.bloop/
+.bsp/
+.metals/
+
+# Chisel / FIRRTL / simulation outputs
+test_run_dir/
+*.anno.json
+*.fir
+*.vcd
+*.fst
+*.gtkw
+*.vpd
+
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Editor swap files
+*.swp
+*.swo
