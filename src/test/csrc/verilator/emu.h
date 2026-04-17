@@ -17,7 +17,13 @@
 #ifndef __EMU_H
 #define __EMU_H
 
+#ifdef TRACERTL_STANDALONE_HOLLOW_TOP
+#include "VHollowTop.h"
+using VerilatedDutTop = VHollowTop;
+#else
 #include "VSimTop.h"
+using VerilatedDutTop = VSimTop;
+#endif
 #include "common.h"
 #include "dut.h"
 #include "lightsss.h"
@@ -58,7 +64,7 @@ struct EmuArgs {
 
 class Emulator final : public DUT {
 private:
-  VSimTop *dut_ptr;
+  VerilatedDutTop *dut_ptr;
 #ifdef ENABLE_FST
   VerilatedFstC *tfp;
 #else

@@ -181,7 +181,7 @@ public:
   void success_dump();
   void error_drive_dump();
 
-  bool isOver() { return status == TRACE_EOF; }
+  bool isOver() { return status == TRACE_EOF && pendingInstList.empty() && redirectInstList.empty(); }
   bool isError() { return status == TRACE_ERROR; }
   bool isErrorDrive() { return status == TRACE_ERROR_DRIVE; }
   bool isStuck() { return status == TRACE_STUCK; }

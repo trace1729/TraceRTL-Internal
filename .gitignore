@@ -26,6 +26,11 @@ test_run_dir/
 *.gtkw
 *.vpd
 
+*.txt
+*.log
+*.err
+*.out
+
 # IDE files
 .idea/
 *.iml

@@ -210,7 +210,7 @@ static int output_stat(char *buf) {
 }
 
 Emulator::Emulator(int argc, const char *argv[])
-    : dut_ptr(new VSimTop), cycles(0), trapCode(STATE_RUNNING), elapsed_time(uptime()) {
+  : dut_ptr(new VerilatedDutTop), cycles(0), trapCode(STATE_RUNNING), elapsed_time(uptime()) {
 #if !defined(VERILATOR_VERSION_INTEGER) || VERILATOR_VERSION_INTEGER < 5026000
   const size_t emu_stack_size = 32 * 1024 * 1024;
   struct rlimit rlim;

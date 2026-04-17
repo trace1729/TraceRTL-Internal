@@ -21,7 +21,7 @@
 #include "spikedasm.h"
 #include "trace_common.h"
 
-#define TraceFetchWidth 16
+#define TraceFetchWidth 8
 
 #define PADDRBITS 36
 #define VADDRBITS 39
