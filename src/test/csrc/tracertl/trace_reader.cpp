@@ -68,15 +68,15 @@ void TraceReader::pre_readfile(const char *trace_file_name, uint64_t skip_tracei
 
   // decompress
   printf("[TraceRTL] decompress tracefile...\n");
-  size_t sizeAfterDC = traceDecompressSizeZSTD(fileBuffer, fileSize);
-  if ((sizeAfterDC % sizeof(TraceInstruction)) != 0) {
-    printf("Error: Trace file decompress result wrong. sizeAfterDC cannot be divide exactly.\n");
+  size_t decompressCapacity = traceDecompressSizeZSTD(fileBuffer, fileSize);
+  char *decompressBuffer = new char[decompressCapacity];
+  uint64_t decompressedSize =
+    traceDecompressZSTD(decompressBuffer, decompressCapacity, fileBuffer, fileSize);
+  if ((decompressedSize % sizeof(TraceInstruction)) != 0) {
+    printf("Error: Trace file decompress result is not instruction-aligned.\n");
     exit(1);
   }
-
-  TraceInstruction *instDecompressBuffer = new TraceInstruction[sizeAfterDC / sizeof(TraceInstruction)];
-  uint64_t decompressedSize =
-    traceDecompressZSTD((char *)instDecompressBuffer, sizeAfterDC, fileBuffer, fileSize);
+  TraceInstruction *instDecompressBuffer = reinterpret_cast<TraceInstruction *>(decompressBuffer);
   uint64_t traceInstNum = decompressedSize / sizeof(TraceInstruction);
   delete[] fileBuffer;
 
@@ -86,12 +86,6 @@ void TraceReader::pre_readfile(const char *trace_file_name, uint64_t skip_tracei
   }
   if (traceInstNum <= skip_traceinstr) {
     printf("[TraceRTL] Skip all the instructions. Exit\n");
-    exit(1);
-  }
-
-  if (decompressedSize != sizeAfterDC) {
-    std::cerr << "[TraceRTL] Error of Decompress. Decompress size not match "
-              << sizeAfterDC << " " << decompressedSize << std::endl;
     exit(1);
   }
 
@@ -124,7 +118,7 @@ void TraceReader::pre_readfile(const char *trace_file_name, uint64_t skip_tracei
   printf("[TraceRTL] preread trace file finished.\n");
   fflush(stdout);
 
-  delete[] instDecompressBuffer;
+  delete[] decompressBuffer;
 }
 
 void TraceReader::mid_construct(uint64_t max_insts, bool enable_gen_paddr) {
@@ -193,6 +187,10 @@ bool TraceReader::readFromBuffer(Instruction &inst, uint8_t idx) {
   METHOD_TRACE();
   inst = readBuffer[idx];
   readBufferNeedReload = true;
+  if (getenv("TRACERTL_DEBUG_READER") != nullptr && idx == 0) {
+    printf("[TraceReaderDebug] read head id=0x%lx pc=0x%lx pending=%zu drive=%zu replay=%zu\n",
+      inst.inst_id, inst.instr_pc_va, pendingInstList.size(), driveInstInput.size(), redirectInstList.size());
+  }
 //  printf("TraceReadBuffer %d+%d->newIdx:%d", idx, readBufferStartIdx, idx_inner);
 //  inst.dump();
 //  fflush(stdout);
@@ -295,9 +293,14 @@ bool TraceReader::read(Instruction &inst, bool record = true) {
   * 2. flush the driveInstInput
   * 3. re-prepare readBuffer
   */
-void TraceReader::redirect(uint64_t inst_id) {
+void TraceReader::redirect(uint64_t inst_id, bool preserve_drive_before) {
   METHOD_TRACE();
   redirectLog.push_back(inst_id);
+
+  if (getenv("TRACERTL_DEBUG_READER") != nullptr) {
+    printf("[TraceReaderDebug] redirect id=0x%lx preserve=%d pending=%zu drive=%zu replay=%zu\n",
+      inst_id, preserve_drive_before, pendingInstList.size(), driveInstInput.size(), redirectInstList.size());
+  }
 
   if (pendingInstList.size() > 0) {
     if (pendingInstList.back().inst_id < inst_id || pendingInstList.front().inst_id > inst_id) {
@@ -316,10 +319,22 @@ void TraceReader::redirect(uint64_t inst_id) {
     pendingInstList.pop_back();
     redirectInstList.push_front(inst);
   }
-  // flush driveInstInput
-  driveInstInput.clear();
+  if (preserve_drive_before) {
+    // An IFU checker redirect retains the corrected packet prefix already
+    // enqueued into IBuffer. Only younger instructions are replayed.
+    while (!driveInstInput.empty() && driveInstInput.back().inst_id >= inst_id) {
+      driveInstInput.pop_back();
+    }
+  } else {
+    // A backend redirect flushes every fetched instruction not yet decoded.
+    driveInstInput.clear();
+  }
 
   readBufferNeedReload = true;
+  if (getenv("TRACERTL_DEBUG_READER") != nullptr) {
+    printf("[TraceReaderDebug] redirect done id=0x%lx pending=%zu drive=%zu replay=%zu\n",
+      inst_id, pendingInstList.size(), driveInstInput.size(), redirectInstList.size());
+  }
   METHOD_TRACE();
 }
 
@@ -337,6 +352,9 @@ void TraceReader::collectCommit(uint64_t pc, uint32_t inst, uint8_t instNum, uin
 
 void TraceReader::collectDrive(uint64_t pc, uint32_t inst, uint8_t idx) {
   METHOD_TRACE();
+  if (getenv("TRACERTL_DEBUG_READER") != nullptr) {
+    printf("[TraceReaderDebug] drive idx=%u pc=0x%lx inst=0x%x\n", idx, pc, inst);
+  }
   driveBuffer[idx].valid = true;
   driveBuffer[idx].inst.instr_pc = pc;
   driveBuffer[idx].inst.instr = inst;
@@ -850,6 +868,7 @@ void TraceReader::error_dump() {
     printf("========= TraceRTL Stuck at inst 0x%lx ===========\n", commit_inst_num.get());
   }
   dump_uncommited_inst();
+  error_drive_dump();
 }
 
 void TraceReader::assert_dump() {
