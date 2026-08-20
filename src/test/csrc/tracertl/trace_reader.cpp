@@ -21,7 +21,9 @@
 #include "tracertl.h"
 #include "trace_decompress.h"
 
+#ifdef TRACERTL_FPGA
 #include <tracertl_dut_info.h>
+#endif
 
 TraceReader::TraceReader(const char *trace_file_name, bool enable_gen_paddr, uint64_t max_insts, uint64_t skip_traceinstr)
 {
@@ -445,7 +447,13 @@ void TraceReader::checkCommit(uint64_t tick) {
     if (slow_count > 3) {
       printf("\n");
       printf("  Slow Simulation Speed, may conflict with other process\n");
-      setEmuConflict();
+      // Slow hosts, ChiselDB, and waveform dumping can legitimately stay below
+      // the heuristic threshold. Keep the diagnostic, but only turn it into a
+      // simulation failure when CI explicitly requests the old behavior.
+      if (getenv("TRACERTL_ABORT_ON_SLOW_SIM") != nullptr) {
+        setEmuConflict();
+      }
+      slow_count = 0;
     }
   }
 #endif
@@ -494,6 +502,7 @@ void TraceReader::checkDrive() {
   METHOD_TRACE();
 }
 
+#ifdef TRACERTL_FPGA
 size_t TraceReader::getFpgaPacketSize(size_t inst_num) {
   return sizeof(TraceFpgaInstruction) * inst_num;
 }
@@ -730,6 +739,7 @@ bool TraceReader::fpgaCommitDiff(TraceFpgaCollectStruct *buf, size_t inst_num) {
   }
   return true;
 }
+#endif
 
 // replace CheckCommit in FPGA mode
 void TraceReader::checkCommitFPGA(uint64_t tick) {
