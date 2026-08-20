@@ -168,7 +168,7 @@ public:
 #endif
   void checkCommitFPGA(uint64_t tick);
 
-  void redirect(uint64_t inst_id);
+  void redirect(uint64_t inst_id, bool preserve_drive_before);
   void collectCommit(uint64_t pc, uint32_t inst, uint8_t instNum, uint8_t idx);
   void collectDrive(uint64_t pc, uint32_t inst, uint8_t idx);
   void checkCommit(uint64_t tick);
