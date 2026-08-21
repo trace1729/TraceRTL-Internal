@@ -124,7 +124,8 @@ void __attribute__((noinline))  trace_read_insts(uint8_t enable, ManyInstruction
       trace_reader->readFromBuffer(manyInsts->insts[i], i);
       manyInsts->insts[i].instr_pc_pa = manyInsts->insts[i].instr_pc_pa == 0 ?
         manyInsts->insts[i].instr_pc_va : manyInsts->insts[i].instr_pc_pa;
-      manyInsts->insts[i].exu_data.memory_address.pa = manyInsts->insts[i].exu_data.memory_address.pa == 0 ?
+      manyInsts->insts[i].exu_data.memory_address.pa = manyInsts->insts[i].memory_type != MEM_TYPE_None &&
+        manyInsts->insts[i].exu_data.memory_address.pa == 0 ?
         manyInsts->insts[i].exu_data.memory_address.va : manyInsts->insts[i].exu_data.memory_address.pa;
     }
   }
@@ -150,7 +151,8 @@ extern "C" void trace_read_one_instr(
   *pc_va = inst.instr_pc_va;
   *pc_pa = inst.instr_pc_pa == 0 ? inst.instr_pc_va : inst.instr_pc_pa;
   *memory_addr_va = inst.exu_data.memory_address.va;
-  *memory_addr_pa = inst.exu_data.memory_address.pa == 0 ? inst.exu_data.memory_address.va : inst.exu_data.memory_address.pa;
+  *memory_addr_pa = inst.memory_type != MEM_TYPE_None && inst.exu_data.memory_address.pa == 0 ?
+    inst.exu_data.memory_address.va : inst.exu_data.memory_address.pa;
   *target = inst.target;
   *instr = inst.instr;
   *memory_type = inst.memory_type;
