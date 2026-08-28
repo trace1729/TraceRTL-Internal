@@ -122,7 +122,7 @@ void TraceICache::construct(const std::vector<Instruction> &instList) {
 
 void TraceICache::constructSoftTLB(uint64_t vaddr, uint16_t asid, uint16_t vmid, uint64_t paddr) {
   vaddr = vaddr & vaddr_mask();
-  paddr = paddr & paddr_mask();
+  paddr = (paddr == 0? vaddr: paddr) & paddr_mask();
   // soft_tlb[TLBKeyType(vaddr >> 12, asid, vmid)] = paddr >> 12;
   soft_tlb[vaddr >> 12] = paddr >> 12;
 }
