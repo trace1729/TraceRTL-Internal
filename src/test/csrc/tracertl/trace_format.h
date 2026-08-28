@@ -159,11 +159,10 @@ struct Instruction : TraceInstruction {
 
   inline void fromTraceInst(TraceInstruction t) {
     instr_pc_va = t.instr_pc_va;
-    instr_pc_pa = (t.instr_pc_pa != 0) ? t.instr_pc_pa : t.instr_pc_va;
+    instr_pc_pa = t.instr_pc_pa;
     if (t.memory_type != MEM_TYPE_None) {
       exu_data.memory_address.va = t.exu_data.memory_address.va;
-      exu_data.memory_address.pa = (t.exu_data.memory_address.pa != 0) ?
-        t.exu_data.memory_address.pa : t.exu_data.memory_address.va;
+      exu_data.memory_address.pa = t.exu_data.memory_address.pa;
     } else {
       exu_data.arthi_src = t.exu_data.arthi_src;
     }
