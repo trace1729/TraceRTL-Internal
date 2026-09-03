@@ -123,22 +123,49 @@ void TraceReader::pre_readfile(const char *trace_file_name, uint64_t skip_tracei
 
 void TraceReader::mid_construct(uint64_t max_insts, bool enable_gen_paddr) {
   // Keep recorded physical addresses by default, but allocate DRAM addresses
-  // for MMU_DIRECT records where the trace uses zero as the PA sentinel.
+  // when the trace does not provide a PA (encoded as zero).
   uint64_t generated_instr_paddr = 0;
   uint64_t generated_data_paddr = 0;
-  for (auto &inst : instList_preread) {
-    if (enable_gen_paddr || inst.instr_pc_pa == 0) {
-      inst.instr_pc_pa = iPaddrAllocator.va2pa(inst.instr_pc_va);
-      generated_instr_paddr++;
+
+  if (!enable_gen_paddr) {
+    // Do not let a synthetic page alias any real page recorded by NEMU.
+    for (const auto &inst : instList_preread) {
+      if (inst.instr_pc_pa != 0) {
+        syntheticPaddrAllocator.reserve(inst.instr_pc_pa);
+      }
+      if (inst.memory_type != MEM_TYPE_None &&
+          inst.exu_data.memory_address.pa != 0) {
+        syntheticPaddrAllocator.reserve(inst.exu_data.memory_address.pa);
+      }
     }
-    if (inst.memory_type != MEM_TYPE_None &&
-        (enable_gen_paddr || inst.exu_data.memory_address.pa == 0)) {
-      inst.exu_data.memory_address.pa = dPaddrAllocator.va2pa(inst.exu_data.memory_address.va);
-      generated_data_paddr++;
+  }
+
+  for (auto &inst : instList_preread) {
+    if (enable_gen_paddr) {
+      inst.instr_pc_pa = syntheticPaddrAllocator.va2pa(inst.instr_pc_va);
+      generated_instr_paddr++;
+      if (inst.memory_type != MEM_TYPE_None) {
+        inst.exu_data.memory_address.pa =
+          syntheticPaddrAllocator.va2pa(inst.exu_data.memory_address.va);
+        generated_data_paddr++;
+      }
+    } else {
+      if (inst.instr_pc_pa == 0) {
+        inst.instr_pc_pa = syntheticPaddrAllocator.va2pa(inst.instr_pc_va);
+        generated_instr_paddr++;
+      }
+      if (inst.memory_type != MEM_TYPE_None &&
+          inst.exu_data.memory_address.pa == 0) {
+        inst.exu_data.memory_address.pa =
+          syntheticPaddrAllocator.va2pa(inst.exu_data.memory_address.va);
+        generated_data_paddr++;
+      }
     }
   }
   if (enable_gen_paddr) {
-    printf("[TraceRTL] gen paddr finished.\n");
+    printf("[TraceRTL] generated all paddr with random-page policy: "
+           "instr=%lu data=%lu.\n",
+      generated_instr_paddr, generated_data_paddr);
   } else {
     printf("[TraceRTL] generated missing paddr: instr=%lu data=%lu.\n",
       generated_instr_paddr, generated_data_paddr);
@@ -146,8 +173,7 @@ void TraceReader::mid_construct(uint64_t max_insts, bool enable_gen_paddr) {
   fflush(stdout);
 
 #ifdef TRACE_VERBOSE
-  iPaddrAllocator.dump();
-  dPaddrAllocator.dump();
+  syntheticPaddrAllocator.dump();
 #endif
 
   // check legal

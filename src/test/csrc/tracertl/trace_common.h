@@ -50,6 +50,12 @@
 #define TRACE_PADDR_INST_BASE 0xa00000000
 #define TRACE_PADDR_DATA_BASE 0xb00000000
 
+// Synthetic PA space used by --gen-paddr and when a trace record has no PA.
+// XiangShan.ini models 32 GiB of DRAM; exclude the first 2 GiB MMIO region.
+#define TRACE_PADDR_FALLBACK_BASE 0x80000000
+#define TRACE_PADDR_FALLBACK_SIZE 0x780000000
+#define TRACE_PADDR_FALLBACK_SEED 0x6a09e667f3bcc909ULL
+
 enum BranchType {
   BRANCH_None = 0,
   BRANCH_Cond = 1,          // branch
