@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <unordered_set>
 #include "trace_common.h"
@@ -62,7 +63,7 @@ public:
 };
 
 template<uint64_t baseAddr, uint64_t regionSize, uint64_t seed>
-class TraceRandomPAddrAllocator {
+class TraceRandomExtentPAddrAllocator {
 private:
   static_assert((baseAddr & TRACE_PAGE_OFFSET_MASK) == 0,
     "synthetic PA base must be page aligned");
@@ -74,9 +75,13 @@ private:
   static constexpr uint64_t basePpn = baseAddr >> TRACE_PAGE_SHIFT;
   static constexpr uint64_t pageCount = regionSize >> TRACE_PAGE_SHIFT;
 
+  std::set<uint64_t> observedVpns;
   std::map<uint64_t, uint64_t> v2pMap;
   std::unordered_set<uint64_t> unavailablePpns;
   uint64_t allocationIndex = 0;
+  uint64_t extentCount = 0;
+  uint64_t maxExtentPages = 0;
+  bool finalized = false;
 
   static uint64_t mix64(uint64_t value) {
     value += 0x9e3779b97f4a7c15ULL;
@@ -89,18 +94,48 @@ private:
     return (ppn << TRACE_PAGE_SHIFT) | (fullAddr & TRACE_PAGE_OFFSET_MASK);
   }
 
-  uint64_t allocatePpn() {
-    if (unavailablePpns.size() >= pageCount) {
-      throw std::runtime_error("TraceRandomPAddrAllocator: synthetic PA region exhausted");
+  bool extentAvailable(uint64_t startPpn, uint64_t extentPages) const {
+    for (uint64_t offset = 0; offset < extentPages; ++offset) {
+      if (unavailablePpns.find(startPpn + offset) != unavailablePpns.end()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  uint64_t allocateExtent(uint64_t extentPages) {
+    if (extentPages == 0 || extentPages > pageCount ||
+        unavailablePpns.size() > pageCount - extentPages) {
+      throw std::runtime_error(
+        "TraceRandomExtentPAddrAllocator: synthetic PA region exhausted");
     }
 
-    uint64_t offset = mix64(seed + allocationIndex++) % pageCount;
-    uint64_t ppn = basePpn + offset;
-    while (!unavailablePpns.insert(ppn).second) {
-      offset = (offset + 1) % pageCount;
-      ppn = basePpn + offset;
+    const uint64_t startCount = pageCount - extentPages + 1;
+    uint64_t startOffset = mix64(seed + allocationIndex++) % startCount;
+    for (uint64_t attempt = 0; attempt < startCount; ++attempt) {
+      const uint64_t candidate = basePpn + startOffset;
+      if (extentAvailable(candidate, extentPages)) {
+        for (uint64_t offset = 0; offset < extentPages; ++offset) {
+          unavailablePpns.insert(candidate + offset);
+        }
+        return candidate;
+      }
+      startOffset = (startOffset + 1) % startCount;
     }
-    return ppn;
+    throw std::runtime_error(
+      "TraceRandomExtentPAddrAllocator: no contiguous physical extent available");
+  }
+
+  void mapExtent(uint64_t firstVpn, uint64_t lastVpn) {
+    const uint64_t extentPages = lastVpn - firstVpn + 1;
+    const uint64_t firstPpn = allocateExtent(extentPages);
+    for (uint64_t offset = 0; offset < extentPages; ++offset) {
+      v2pMap.emplace(firstVpn + offset, firstPpn + offset);
+    }
+    ++extentCount;
+    if (extentPages > maxExtentPages) {
+      maxExtentPages = extentPages;
+    }
   }
 
 public:
@@ -111,17 +146,58 @@ public:
     }
   }
 
+  void observe(uint64_t vaddr) {
+    if (finalized) {
+      throw std::logic_error(
+        "TraceRandomExtentPAddrAllocator: cannot observe after finalize");
+    }
+    observedVpns.insert(vaddr >> TRACE_PAGE_SHIFT);
+  }
+
+  void finalize() {
+    if (finalized) {
+      return;
+    }
+    if (!observedVpns.empty()) {
+      auto vpn = observedVpns.begin();
+      uint64_t firstVpn = *vpn;
+      uint64_t lastVpn = *vpn;
+      for (++vpn; vpn != observedVpns.end(); ++vpn) {
+        if (lastVpn == UINT64_MAX || *vpn != lastVpn + 1) {
+          mapExtent(firstVpn, lastVpn);
+          firstVpn = *vpn;
+        }
+        lastVpn = *vpn;
+      }
+      mapExtent(firstVpn, lastVpn);
+    }
+    finalized = true;
+  }
+
   uint64_t va2pa(uint64_t vaddr) {
     const uint64_t vpn = vaddr >> TRACE_PAGE_SHIFT;
-    auto mapping = v2pMap.find(vpn);
-    if (mapping == v2pMap.end()) {
-      mapping = v2pMap.emplace(vpn, allocatePpn()).first;
+    const auto mapping = v2pMap.find(vpn);
+    if (!finalized || mapping == v2pMap.end()) {
+      throw std::logic_error(
+        "TraceRandomExtentPAddrAllocator: unprepared virtual address");
     }
     return mergePageAndOff(mapping->second, vaddr);
   }
 
+  uint64_t mappedPageCount() const {
+    return v2pMap.size();
+  }
+
+  uint64_t mappedExtentCount() const {
+    return extentCount;
+  }
+
+  uint64_t largestExtentPages() const {
+    return maxExtentPages;
+  }
+
   void dump() const {
-    printf("Trace Random PAddr Allocator V2P Map:\n");
+    printf("Trace Random Extent PAddr Allocator V2P Map:\n");
     for (const auto &mapping : v2pMap) {
       printf("  vpn %016lx -> ppn %016lx\n", mapping.first, mapping.second);
     }

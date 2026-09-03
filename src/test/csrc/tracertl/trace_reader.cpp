@@ -140,6 +140,19 @@ void TraceReader::mid_construct(uint64_t max_insts, bool enable_gen_paddr) {
     }
   }
 
+  // Discover all synthetic VPNs before allocation so adjacent virtual pages
+  // can be placed in one randomly located contiguous physical extent.
+  for (const auto &inst : instList_preread) {
+    if (enable_gen_paddr || inst.instr_pc_pa == 0) {
+      syntheticPaddrAllocator.observe(inst.instr_pc_va);
+    }
+    if (inst.memory_type != MEM_TYPE_None &&
+        (enable_gen_paddr || inst.exu_data.memory_address.pa == 0)) {
+      syntheticPaddrAllocator.observe(inst.exu_data.memory_address.va);
+    }
+  }
+  syntheticPaddrAllocator.finalize();
+
   for (auto &inst : instList_preread) {
     if (enable_gen_paddr) {
       inst.instr_pc_pa = syntheticPaddrAllocator.va2pa(inst.instr_pc_va);
@@ -163,12 +176,19 @@ void TraceReader::mid_construct(uint64_t max_insts, bool enable_gen_paddr) {
     }
   }
   if (enable_gen_paddr) {
-    printf("[TraceRTL] generated all paddr with random-page policy: "
-           "instr=%lu data=%lu.\n",
-      generated_instr_paddr, generated_data_paddr);
+    printf("[TraceRTL] generated all paddr with random-extent policy: "
+           "instr=%lu data=%lu pages=%lu extents=%lu max_extent_pages=%lu.\n",
+      generated_instr_paddr, generated_data_paddr,
+      syntheticPaddrAllocator.mappedPageCount(),
+      syntheticPaddrAllocator.mappedExtentCount(),
+      syntheticPaddrAllocator.largestExtentPages());
   } else {
-    printf("[TraceRTL] generated missing paddr: instr=%lu data=%lu.\n",
-      generated_instr_paddr, generated_data_paddr);
+    printf("[TraceRTL] generated missing paddr: instr=%lu data=%lu "
+           "pages=%lu extents=%lu max_extent_pages=%lu.\n",
+      generated_instr_paddr, generated_data_paddr,
+      syntheticPaddrAllocator.mappedPageCount(),
+      syntheticPaddrAllocator.mappedExtentCount(),
+      syntheticPaddrAllocator.largestExtentPages());
   }
   fflush(stdout);
 

@@ -143,7 +143,7 @@ public:
     return commit_inst_num.get() > 0 ? commit_inst_num.get() - 1 : 0;
   }
   // Physical Address Allocator
-  TraceRandomPAddrAllocator<TRACE_PADDR_FALLBACK_BASE,
+  TraceRandomExtentPAddrAllocator<TRACE_PADDR_FALLBACK_BASE,
     TRACE_PADDR_FALLBACK_SIZE, TRACE_PADDR_FALLBACK_SEED> syntheticPaddrAllocator;
 
   /* get an instruction from file */
