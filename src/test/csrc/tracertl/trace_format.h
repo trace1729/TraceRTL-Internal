@@ -97,10 +97,11 @@ struct TraceInstruction {
   bool legalInst() {
     // when not exception, pc_va and inst should not be zero (when pc_pa is zero, vm not enable)
     if (exception == 0) return (instr_pc_va != 0) && (instr != 0);
-    // when trap, pc_va & target should not be zero
-    else if (isTrap()) return (instr_pc_va != 0) && (target != 0);
-    // when interrupt, target should not be zero
-    return target != 0;
+    // Interrupt/force-jump records are control-flow markers rather than executed
+    // instructions, so their pc and instruction fields may both be zero.
+    if (isInterrupt()) return target != 0;
+    // Synchronous exceptions belong to an instruction and therefore need its pc.
+    return (instr_pc_va != 0) && (target != 0);
   }
 
   bool isCtrlForceJump() {
