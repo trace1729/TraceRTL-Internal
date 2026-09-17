@@ -14,9 +14,10 @@
 * See the Mulan PSL v2 for more details.
 ***************************************************************************************/
 
-#include <stdexcept>
-#include <sstream>
+#include <cerrno>
 #include <cstdlib>
+#include <sstream>
+#include <stdexcept>
 #include "trace_reader.h"
 #include "tracertl.h"
 #include "trace_decompress.h"
@@ -27,6 +28,18 @@
 
 TraceReader::TraceReader(const char *trace_file_name, bool enable_gen_paddr, uint64_t max_insts, uint64_t skip_traceinstr)
 {
+  const char *paddrSeed = getenv("TRACERTL_PADDR_SEED");
+  if (paddrSeed != nullptr) {
+    char *end = nullptr;
+    errno = 0;
+    const uint64_t parsedSeed = strtoull(paddrSeed, &end, 0);
+    if (errno != 0 || end == paddrSeed || *end != '\0') {
+      throw std::invalid_argument("invalid TRACERTL_PADDR_SEED");
+    }
+    syntheticPaddrAllocator.setSeed(parsedSeed);
+  }
+  printf("[TraceRTL] synthetic paddr seed: 0x%016lx.\n",
+    syntheticPaddrAllocator.getSeed());
   printf("[TraceRTL] pre_readfile...\n");
   pre_readfile(trace_file_name, skip_traceinstr);
   printf("[TraceRTL] mid_construct...\n");
@@ -360,7 +373,21 @@ void TraceReader::redirect(uint64_t inst_id, bool preserve_drive_before) {
   }
 
   if (pendingInstList.size() > 0) {
-    if (pendingInstList.back().inst_id < inst_id || pendingInstList.front().inst_id > inst_id) {
+    if (pendingInstList.front().inst_id > inst_id) {
+      // The requested rewind target was already consumed: either committed,
+      // or auto-skipped by the commit checker (CtrlForceJump entries are
+      // popped without any DUT commit, so the RTL-side commit frontier can
+      // legitimately lag the pending front).  Re-delivering consumed
+      // positions would replay retired instructions, while everything from
+      // the front onward is exactly what the commit checker expects next,
+      // so clamp to the oldest still-pending instruction.  (smoke v9: the
+      // ROB wrong-path head resync targeted 0x87, consumed by a force-jump
+      // skip, with pending front 0x88.)
+      printf("TraceReader redirect clamp: inst_id 0x%lx below pending front, clamp to 0x%lx\n",
+        inst_id, pendingInstList.front().inst_id);
+      inst_id = pendingInstList.front().inst_id;
+    }
+    if (pendingInstList.back().inst_id < inst_id) {
       setError();
       printf("Redirect Error: inst_id 0x%lx not in the pendingInstList range [0x%lx, 0x%lx]\n",
        inst_id, pendingInstList.front().inst_id, pendingInstList.back().inst_id);
