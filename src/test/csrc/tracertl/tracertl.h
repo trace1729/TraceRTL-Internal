@@ -21,6 +21,7 @@
 #include "trace_reader.h"
 #include "trace_icache.h"
 #include "trace_fastsim.h"
+#include "trace_wrong_path.h"
 
 //TraceReader *trace_reader = NULL;
 extern TraceICache *trace_icache;
