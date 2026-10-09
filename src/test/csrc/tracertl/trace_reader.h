@@ -139,6 +139,8 @@ public:
   TraceReader(const char *trace_file_name, bool enable_gen_paddr, uint64_t max_insts, uint64_t skip_traceinstr);
   ~TraceReader() {
   }
+  // whole trace, read-only after construction (wrong-path emulation oracle)
+  const std::vector<Instruction> &getInstList() const { return instList_preread; }
   uint64_t get_committed_instrs() {
     return commit_inst_num.get() > 0 ? commit_inst_num.get() - 1 : 0;
   }
